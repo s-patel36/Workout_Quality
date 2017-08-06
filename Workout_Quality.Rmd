@@ -1,0 +1,143 @@
+---
+title: "Workout Quality"
+author: "Shivam Patel"
+date: "8/1/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Intro
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+
+# Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+dim(training)
+dim(testing)
+```
+
+### Exploration
+
+```{r}
+str(training)
+```
+We can already see that we need to clean the data and remove the columns that are mostly NA/empty strings.
+
+```{r}
+library(ggplot2)
+ggplot(training, aes(classe)) + geom_histogram(stat="count")
+```
+
+
+### Preprocessing
+
+We get reid of the first 7 columns because they mainly contain user info that shouldnt be used to predict the quality of the workout.
+```{r}
+training = training[, 8:ncol(training)]
+```
+
+Before we remove any other columns, first lets calulate the percent na and percent empty strings for each column and analyze those that don't equal 0 (missing at least 1 value)
+```{r}
+dropped_cols = data.frame()
+for (col_name in colnames(training)) {
+    col = training[, col_name]
+    percent_na = sum(is.na(col))/length(col)
+    percent_empty = sum(col == "")/length(col)
+    if (percent_na != 0 | percent_empty != 0) {
+        dropped_cols = rbind(dropped_cols, data.frame(col_name=col_name, 
+                                                      percent_na=percent_na,
+                                                      percent_empty=percent_empty))
+    }
+}
+dropped_cols
+```
+
+Taking a look through this, whenever there is a missing value about 97% of the entire column is missing. So we're going to remove them from our data. 
+```{r}
+training = training[, !colnames(training) %in% dropped_cols$col_name]
+```
+
+
+# Modeling 
+
+### Create cross validation set
+
+We want to split our training set so we can cross validate our model and make any final changes before we apply it to our test set (which only contains 20 rows). 
+```{r}
+library(caret)
+
+set.seed(40317)
+inTrain <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
+cross_val <- training[-inTrain, ]
+training <- training[inTrain, ]
+
+dim(training)
+dim(cross_val)
+```
+
+### RPart
+
+Your first model should always be something simple whether its linear regression or recursive partitioning. We are going to use the latter because of the classifcation nature of this project. 
+```{r rpart}
+rpart.fit <- train(classe~., data=training, method="rpart")
+rpart.fit["finalModel"]
+```
+
+From the summary of the final model, we can already see this isn't going to work out because it doesn't create any rules to classify D.
+
+```{r}
+rpart.probs <- predict(rpart.fit, cross_val)
+confusionMatrix(rpart.probs, cross_val$classe)
+```
+
+As we predicted, the results we sub par and so we move on to another modeling technique.
+
+
+### Random Forest
+
+```{r rf, cache=TRUE}
+rf.fit <- train(classe~., data=training, method="rf")
+summary(rf.fit)
+```
+
+```{r}
+rf.probs <- predict(rf.fit, cross_val)
+confusionMatrix(rf.probs, cross_val$classe)
+```
+
+Our results are very close to perfect so we can stop here. 
+
+
+# Results
+
+```{r}
+predict(rf.fit, testing)
+```
+
+### Error
+
+Even with these results there is still some amount of error involved but from our accuracy, it is so close to 100% that we need not be worried. 
+
+### Conclusion
+
+Random Forest and Boostng completely blew away the results providing us with close to 100% accuracy, sensitivity and specificity (sometimes a difficult level to reach).
+
